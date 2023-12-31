@@ -388,7 +388,7 @@ class AlgoEvent:
      
         
     # execute the trading strat for one instructment given the key and bd       
-    def execute_strat(self, bd, key):
+    def execute_strat(self, bd, key, allocated_capital):
         #self.evt.consoleLog("---------------------------------")
         #self.evt.consoleLog("Executing strat")
 
@@ -401,6 +401,7 @@ class AlgoEvent:
         
         inst = self.inst_data[key]
         lastprice =  inst['arr_close'][-1]
+        position_size = allocated_capital
         
         # set direction, ie decide if buy or sell, based on entry signal
         direction = 1
@@ -422,10 +423,16 @@ class AlgoEvent:
             # if current position exist in open order as well as opposite direction and same trading signal, close the order
             self.closeAllOrder(instrument, self.openOrder[instrument][orderRef])
             
-        self.test_sendOrder(lastprice, direction, 'open', stoploss, takeprofit, self.find_positionSize(lastprice), key, inst['entry_signal'] )
+        self.test_sendOrder(lastprice, direction, 'open', stoploss, takeprofit, position_size, key, inst['entry_signal'] )
                 
         #self.evt.consoleLog("Executed strat")
         #self.evt.consoleLog("---------------------------------")
+
+    def allocate_capital(strategy_returns, capital_available):
+        total_returns = sum(strategy_returns)
+        weights = [return_ / total_returns for return_ in strategy_returns]
+        allocated_capital = [weight * capital_available for weight in weights]
+        return allocated_capital
 
 
     def test_sendOrder(self, lastprice, buysell, openclose, stoploss, takeprofit, volume, instrument, orderRef):
