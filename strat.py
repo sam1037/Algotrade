@@ -22,6 +22,7 @@ class AlgoEvent:
         self.risk_reward_ratio = 2.5 # take profit level : risk_reward_ratio * stoploss
         self.stoploss_atrlen = 2.5 # width of atr for stoplsos
         self.allocationratio_per_trade = 0.3
+        self.allocated_capital = 0
         
         self.openOrder = {} # existing open position for updating stoploss and checking direction
         self.netOrder = {} # existing net order
@@ -96,7 +97,7 @@ class AlgoEvent:
                 
                 inst_data['entry_signal'] = self.get_entry_signal(inst_data)
                 
-                #self.evt.consoleLog(f"entry singal: {inst_data['entry_signal']}")
+                self.evt.consoleLog(f"entry singal: {inst_data['entry_signal']}")
                 
                 stoploss = inst_data['atr'][-1] * self.stoploss_atrlen
                 if key in self.openOrder:
@@ -110,9 +111,9 @@ class AlgoEvent:
                 
                 #self.evt.consoleLog(f"upper_bband: {inst_data['upper_bband']}")
                 #self.evt.consoleLog(f"lower_bband: {inst_data['lower_bband']}")
-                #self.evt.consoleLog(f"BB_width: {inst_data['BB_width']}")
+                self.evt.consoleLog(f"BB_width: {inst_data['BB_width']}")
                 
-                #self.evt.consoleLog(f"atr: {inst_data['atr']}")
+                self.evt.consoleLog(f"atr: {inst_data['atr']}")
                 
                 #self.evt.consoleLog(f"arr_fastMA: {inst_data['arr_fastMA']}")
                 #self.evt.consoleLog(f"arr_midMA: {inst_data['arr_midMA']}")
@@ -124,38 +125,13 @@ class AlgoEvent:
             # ranking for signal 2 and 3 based on BBW (favours less BBW)
             # get scores for ranking
             self.get_score2_3(bd, self.inst_data)
-            # sorting
-            sorted_list = []
-            for key in bd:
-                score2_3 = self.inst_data[key]["score2_3"]
-                if numpy.isnan(score2_3):
-                    continue
-                sorted_list.append((key, score2_3))
-            sorted_list = sorted(sorted_list, key=lambda tup: tup[1])
-            sorted_list.reverse()
-            #self.evt.consoleLog(f"sorted list: {sorted_list}")
-            
-            # cut down the len
-            new_len = min((len(sorted_list)-1 ) // 2, 5)
-            sorted_list = sorted_list[0:new_len:]
-            #self.evt.consoleLog(f"sorted list: {sorted_list}")
-            
-            
-            # execute trading strat of signal 2, 3 based on the scores
-            for (key, score2_3) in sorted_list:
-                if self.inst_data[key]['entry_signal'] in [-3,-2,2,3]:
-                    self.execute_strat(bd, key)
-         
-            
-            
+            # sort self.inst_data by least BBW
             
             
             # execute the trading strat for all instruments
-            """
             for key in bd:
                 if self.inst_data[key]['entry_signal'] != 0:
-                    self.execute_strat(bd, key)
-            """
+                    self.execute_strat(bd, key, self.allocated_capital )
             
             
     def on_marketdatafeed(self, md, ab):
@@ -245,7 +221,7 @@ class AlgoEvent:
         # assign score for each instruments
         for key in bd:
             inst_data[key]["score2_3"] = (max_bbw - inst_data[key]["BB_width"][-1])/ (max_bbw-min_bbw)
-            #self.evt.consoleLog(f"score2_3 {inst_data[key]['score2_3']}") 
+            self.evt.consoleLog(f"score2_3 {inst_data[key]['score2_3']}") 
 
         
         
@@ -332,7 +308,7 @@ class AlgoEvent:
       
         
     # execute the trading strat for one instructment given the key and bd       
-    def execute_strat(self, bd, key):
+    def execute_strat(self, bd, key , allocated_capital):
         #self.evt.consoleLog("---------------------------------")
         #self.evt.consoleLog("Executing strat")
 
@@ -343,14 +319,15 @@ class AlgoEvent:
         #self.evt.consoleLog(f"lower: {lower_bband}")
         #self.evt.consoleLog(f"bbw: {bbw}")
         
-        inst = self.inst_data[key]
+        inst =  self.inst_data[key]
         lastprice =  inst['arr_close'][-1]
+        position_size = allocated_capital
         
         # set direction, ie decide if buy or sell, based on entry signal
         direction = 1
         if inst['entry_signal'] > 0:
             direction = 1 #long
-        elif inst['entry_signal'] < 0:
+        elif inst['entry_singal'] < 0:
             direction = -1 #short
         
         
@@ -366,7 +343,7 @@ class AlgoEvent:
             # if current position exist in open order as well as opposite direction and same trading signal, close the order
             self.closeAllOrder(instrument, self.openOrder[instrument][orderRef])
             
-        self.test_sendOrder(lastprice, direction, 'open', stoploss, takeprofit, self.find_positionSize(lastprice), key, inst['entry_signal'] )
+        self.test_sendOrder(lastprice, direction, 'open', stoploss, takeprofit, position_size, key, inst['entry_signal'] )
                 
         #self.evt.consoleLog("Executed strat")
         #self.evt.consoleLog("---------------------------------")
@@ -429,22 +406,36 @@ class AlgoEvent:
                     newsl_level = lastprice + new_stoploss
                     res = self.evt.update_opened_order(tradeID=ID, sl = newsl_level)
                     # update the update stop loss using ATR stop
+    
+
+    def allocate_capital(strategy_returns, capital_available):
+        total_returns = sum(strategy_returns)
+        weights = [return_ / total_returns for return_ in strategy_returns]
+        allocated_capital = [weight * capital_available for weight in weights]
+        return allocated_capital
                     
         
 
     # utility function to find volume based on available balance
-    def find_positionSize(self, lastprice):
+    def find_positionSize(self, lastprice, allocated_capital):
         res = self.evt.getAccountBalance()
         availableBalance = res["availableBalance"]
-        ratio = self.allocationratio_per_trade
-        volume = (availableBalance*ratio) / lastprice
-        total =  volume *  lastprice
-        while total < self.allocationratio_per_trade * availableBalance:
+        ratio = allocated_capital / availableBalance
+        volume = (availableBalance * ratio) / lastprice
+        total = volume * lastprice
+        while total < allocated_capital:
             ratio *= 1.05
-            volume = (availableBalance*ratio) / lastprice
-            total =  volume *  lastprice
+            volume = (availableBalance * ratio) / lastprice
+            total = volume * lastprice
         while total > availableBalance:
             ratio *= 0.95
-            volume = (availableBalance*ratio) / lastprice
-            total =  volume *  lastprice
+            volume = (availableBalance * ratio) / lastprice
+            total = volume * lastprice
         return volume
+    
+
+    
+
+
+
+    
