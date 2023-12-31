@@ -173,10 +173,10 @@ class AlgoEvent:
             return 0 # Neutral
             
     def rangingFilter(self, ADXR, AROONOsc, MA_same_direction, rsi):
-        if (ADXR[-1] < 30) or abs(AROONOsc[-1]) < 50 or not MA_same_direction:
-            return True # ranging market
-        else:
-            return False
+        is_ranging = False
+        if ADXR[-1] < 25 or abs(AROONOsc[-1]) < 30 or not MA_same_direction:
+            is_ranging = True
+        return is_ranging
     
     def get_entry_signal(self, inst_data):
         inst = inst_data
