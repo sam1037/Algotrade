@@ -321,7 +321,7 @@ class AlgoEvent:
         
         inst =  self.inst_data[key]
         lastprice =  inst['arr_close'][-1]
-        
+        position_size = allocated_capital[key]
         # set direction, ie decide if buy or sell, based on entry signal
         direction = 1
         if inst['entry_signal'] > 0:
@@ -342,7 +342,7 @@ class AlgoEvent:
             # if current position exist in open order as well as opposite direction and same trading signal, close the order
             self.closeAllOrder(instrument, self.openOrder[instrument][orderRef])
             
-        self.test_sendOrder(lastprice, direction, 'open', stoploss, takeprofit, self.find_positionSize(lastprice), key, inst['entry_signal'] )
+        self.test_sendOrder(lastprice, direction, 'open', stoploss, takeprofit, position_size, key, inst['entry_signal'] )
                 
         #self.evt.consoleLog("Executed strat")
         #self.evt.consoleLog("---------------------------------")
@@ -405,22 +405,28 @@ class AlgoEvent:
                     newsl_level = lastprice + new_stoploss
                     res = self.evt.update_opened_order(tradeID=ID, sl = newsl_level)
                     # update the update stop loss using ATR stop
+    
+
+    def allocate_capital(self, strategy_returns, capital_available):
+        total_returns = sum(strategy_returns)
+        weights = [return_ / total_returns for return_ in strategy_returns]
+        allocated_capital = [weight * capital_available for weight in weights]
+        return allocated_capital
                     
-        
 
     # utility function to find volume based on available balance
-    def find_positionSize(self, lastprice):
+    def find_positionSize(self, lastprice, allocated_capital):
         res = self.evt.getAccountBalance()
         availableBalance = res["availableBalance"]
-        ratio = self.allocationratio_per_trade
-        volume = (availableBalance*ratio) / lastprice
-        total =  volume *  lastprice
-        while total < self.allocationratio_per_trade * availableBalance:
+        ratio = allocated_capital / availableBalance
+        volume = (availableBalance * ratio) / lastprice
+        total = volume * lastprice
+        while total < allocated_capital:
             ratio *= 1.05
-            volume = (availableBalance*ratio) / lastprice
-            total =  volume *  lastprice
+            volume = (availableBalance * ratio) / lastprice
+            total = volume * lastprice
         while total > availableBalance:
             ratio *= 0.95
-            volume = (availableBalance*ratio) / lastprice
-            total =  volume *  lastprice
+            volume = (availableBalance * ratio) / lastprice
+            total = volume * lastprice
         return volume
