@@ -432,19 +432,10 @@ class AlgoEvent:
         
     # execute the trading strat for one instructment given the key and bd       
     def execute_strat(self, bd, key):
-        #self.evt.consoleLog("---------------------------------")
-        #self.evt.consoleLog("Executing strat")
-
-        # debug
-        #self.evt.consoleLog(f"name of instrument: { bd[key]['instrument'] }")
-        #self.evt.consoleLog(f"datetime: {bd[self.myinstrument]['timestamp']}")
-        #self.evt.consoleLog(f"upper: {upper_bband}")
-        #self.evt.consoleLog(f"lower: {lower_bband}")
-        #self.evt.consoleLog(f"bbw: {bbw}")
         
         inst = self.inst_data[key]
         lastprice =  inst['arr_close'][-1]
-        
+        position_size = self.allocate_capital( self.calculate_net_returns(inst['arr_close']), key )
         # set direction, ie decide if buy or sell, based on entry signal
         direction = 1
         if inst['entry_signal'] > 0:
@@ -465,10 +456,27 @@ class AlgoEvent:
             # if current position exist in open order as well as opposite direction and same trading signal, close the order
             self.closeAllOrder(instrument, self.openOrder[instrument][orderRef])
             
-        self.test_sendOrder(lastprice, direction, 'open', stoploss, takeprofit, (self.no_of_trade_today/self.no_of_inst)* self.find_positionSize(lastprice), key, inst['entry_signal'] )
-                
-        #self.evt.consoleLog("Executed strat")
-        #self.evt.consoleLog("---------------------------------")
+        self.test_sendOrder(lastprice, direction, 'open', stoploss, takeprofit, position_size, key, inst['entry_signal'] )
+        
+    def calculate_net_returns(self, prices):
+        net_returns = 0
+        for i in range(1, len(prices)):
+            daily_return = prices[i] - prices[i-1]
+            net_returns += daily_return
+        return net_returns   
+        
+    def allocate_capital(self, strategy_returns, key):
+        inst = self.inst_data[key]
+        initial_price = inst['arr_close'][0]
+        if strategy_returns <= 0:
+            return 0.001
+        # Calculate the available capital for trading
+        res = self.evt.getAccountBalance()
+        bal = res["availableBalance"]
+        if bal < 0.2 :
+            bal = abs(bal)*10
+        position_size = bal * (strategy_returns / initial_price)   
+        return position_size
 
 
     def test_sendOrder(self, lastprice, buysell, openclose, stoploss, takeprofit, volume, instrument, orderRef):
